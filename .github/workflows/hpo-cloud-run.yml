@@ -1,0 +1,105 @@
+name: HPO cloud experiment
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/hpo-cloud-run.yml"
+      - "requirements.txt"
+      - "scripts/verify_python_env.py"
+      - "data/solar_dataset_final_04252025.csv"
+      - "run_cli.py"
+      - "ard/**"
+      - "ard_engine.py"
+
+jobs:
+  run-hpo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python scripts/verify_python_env.py
+
+      - name: Validate dataset
+        run: |
+          test -s data/solar_dataset_final_04252025.csv
+          python - <<'PY'
+          import csv
+          from pathlib import Path
+
+          path = Path("data/solar_dataset_final_04252025.csv")
+          with path.open(newline="", encoding="utf-8-sig") as handle:
+              reader = csv.reader(handle)
+              header = next(reader)
+              rows = sum(1 for _ in reader)
+
+          required = {
+              "Date", "POWER", "TCWL", "TCIW", "SP", "HUM", "U", "V",
+              "TEMP", "SSRD", "STRD", "TSR", "TP", "TCC",
+          }
+          missing = sorted(required.difference(header))
+          if missing:
+              raise SystemExit(f"Missing required columns: {missing}")
+          print(f"Dataset OK: {rows} rows, {len(header)} columns")
+          PY
+
+      - name: Run selected HPO experiment
+        run: |
+          python run_cli.py \
+            --data "data/solar_dataset_final_04252025.csv" \
+            --target POWER \
+            --date_col Date \
+            --features TCWL TCIW SP HUM U V TEMP SSRD STRD TSR TP TCC \
+            --models LightGBM XGBoost HistGB \
+            --optimizers None PSO GA ABC TPE \
+            --folds 3 \
+            --iters 40 \
+            --nested_cv \
+            --strict_time_order \
+            --deterministic \
+            --compute_shap \
+            --shap_rows 314 \
+            --out ard_outputs
+
+      - name: Write run manifest
+        if: always()
+        run: |
+          mkdir -p ard_outputs
+          {
+            echo "# HPO cloud run manifest"
+            echo
+            echo "- command: python run_cli.py --data data/solar_dataset_final_04252025.csv --target POWER --date_col Date --features TCWL TCIW SP HUM U V TEMP SSRD STRD TSR TP TCC --models LightGBM XGBoost HistGB --optimizers None PSO GA ABC TPE --folds 3 --iters 40 --nested_cv --strict_time_order --deterministic --compute_shap --shap_rows 314 --out ard_outputs"
+            echo "- target: POWER"
+            echo "- features: TCWL, TCIW, SP, HUM, U, V, TEMP, SSRD, STRD, TSR, TP, TCC"
+            echo "- models: LightGBM, XGBoost, HistGB"
+            echo "- optimizers: None, PSO, GA, ABC, TPE"
+            echo "- xai: SHAP, PFI, LIME requested through CLI defaults"
+            echo "- output_dir: ard_outputs"
+          } > ard_outputs/cloud_run_manifest.md
+
+      - name: List generated outputs
+        if: always()
+        run: |
+          find ard_outputs -maxdepth 4 -type f | sort | tee ard_outputs/generated_files.txt
+
+      - name: Upload ard_outputs artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ard_outputs
+          path: ard_outputs/
+          if-no-files-found: warn
