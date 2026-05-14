@@ -1,0 +1,102 @@
+name: ARD CI
+
+on:
+  push:
+    branches: ["main", "master", "dev"]
+  pull_request:
+    branches: ["main", "master"]
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # 1. Syntax & import check (fast, no heavy deps)
+  # ─────────────────────────────────────────────────────────────────────────
+  lint:
+    name: Syntax check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check Python syntax (ast.parse)
+        run: |
+          python - << 'EOF'
+          import ast, sys, pathlib
+          files = list(pathlib.Path(".").rglob("*.py"))
+          failed = []
+          for f in files:
+              try:
+                  ast.parse(f.read_text(encoding="utf-8"))
+              except SyntaxError as e:
+                  failed.append(f"{f}: {e}")
+          if failed:
+              print("SYNTAX ERRORS:")
+              for msg in failed:
+                  print(" ", msg)
+              sys.exit(1)
+          print(f"✅ {len(files)} files — syntax OK")
+          EOF
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 2. Unit tests (fast, no SHAP / optuna / LightGBM / XGBoost needed)
+  # ─────────────────────────────────────────────────────────────────────────
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements.txt') }}
+
+      - name: Install core dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pytest
+          pip install numpy pandas scipy scikit-learn
+
+      - name: Run unit tests (skip integration)
+        run: pytest tests/ -v -m "not integration" --tb=short
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 3. Integration tests (full deps, only on Python 3.11)
+  # ─────────────────────────────────────────────────────────────────────────
+  integration-tests:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-3.11-full-${{ hashFiles('requirements.txt') }}
+
+      - name: Install all dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pytest
+          pip install -r requirements.txt
+
+      - name: Run integration tests
+        run: pytest tests/ -v -m "integration" --tb=short
