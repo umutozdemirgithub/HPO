@@ -444,3 +444,5 @@ This avoids empty parent panels in multi-seed mode because OOF predictions, fold
 The Streamlit sidebar section **2C. Explainable AI Selection** now separates XAI computation from cross-method comparison. You may compute any subset of SHAP, PFI, and LIME without generating the SHAP/PFI/LIME agreement plots. Enable **Build XAI method-comparison artifacts** only when you need normalized importance comparison, rank-correlation heatmaps, and agreement tables. This is useful for reducing runtime and avoiding unnecessary artifacts in exploratory runs.
 
 In multi-seed mode, Visual Analytics widget keys are scoped per seed output folder so repeated seed tabs can render the same controls without Streamlit duplicate-key errors.
+
+Codex PR test
