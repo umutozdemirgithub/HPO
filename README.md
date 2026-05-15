@@ -446,3 +446,4 @@ The Streamlit sidebar section **2C. Explainable AI Selection** now separates XAI
 In multi-seed mode, Visual Analytics widget keys are scoped per seed output folder so repeated seed tabs can render the same controls without Streamlit duplicate-key errors.
 
 Codex PR test
+Codex PR final test
