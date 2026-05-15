@@ -66,7 +66,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install pytest
-          pip install numpy pandas scipy scikit-learn
+          pip install numpy pandas scipy scikit-learn matplotlib
 
       - name: Run unit tests (skip integration)
         run: pytest tests/ -v -m "not integration" --tb=short
