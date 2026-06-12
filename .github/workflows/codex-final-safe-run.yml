@@ -1,0 +1,105 @@
+name: Codex final safe ARD run
+
+on:
+  push:
+    branches:
+      - codex/run-final-safe-20260612
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  final-safe-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      PYTHONHASHSEED: "42"
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+      LIGHTGBM_VERBOSE: "-1"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: requirements-lock.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-lock.txt
+
+      - name: Show dataset metadata
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import pandas as pd
+          path = Path("data/solar_dataset_final_04252025.csv")
+          print(f"dataset_exists={path.exists()}")
+          print(f"dataset_size_bytes={path.stat().st_size if path.exists() else 0}")
+          df = pd.read_csv(path, nrows=5)
+          print("columns=" + ",".join(map(str, df.columns)))
+          print(f"preview_rows={len(df)}")
+          PY
+
+      - name: Run final experiment
+        shell: bash
+        run: |
+          set -o pipefail
+          DATA_FILE="data/solar_dataset_final_04252025.csv"
+          python run_cli.py \
+            --data "$DATA_FILE" \
+            --target POWER \
+            --date_col Date.1 \
+            --features TCWL TCIW SP HUM TCC U V TEMP SSRD STRD TSR TP \
+            --models LightGBM \
+            --optimizers None TPE PSO GA ABC \
+            --folds 3 \
+            --iters 40 \
+            --nested_cv \
+            --strict_time_order \
+            --deterministic \
+            --compute_shap \
+            --shap_rows 200 \
+            --out ard_outputs_final_safe 2>&1 | tee run.log
+
+      - name: Package outputs
+        if: always()
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          out_dir = Path("ard_outputs_final_safe")
+          zip_path = Path("ard_outputs_final_safe.zip")
+          with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+              if out_dir.exists():
+                  for path in sorted(out_dir.rglob("*")):
+                      if path.is_file():
+                          zf.write(path, path.as_posix())
+              else:
+                  marker = Path("NO_OUTPUT_DIRECTORY.txt")
+                  marker.write_text("ard_outputs_final_safe was not created. Check run.log and workflow logs.\n", encoding="utf-8")
+                  zf.write(marker, marker.name)
+              log = Path("run.log")
+              if log.exists():
+                  zf.write(log, log.name)
+          print(f"created={zip_path} size={zip_path.stat().st_size}")
+          PY
+
+      - name: Upload zipped outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ard_outputs_final_safe
+          path: ard_outputs_final_safe.zip
+          if-no-files-found: error
+          retention-days: 14
