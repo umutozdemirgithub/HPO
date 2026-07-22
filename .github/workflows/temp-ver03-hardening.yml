@@ -1,0 +1,56 @@
+name: Temporary Ver03 hardening
+
+on:
+  push:
+    branches: ["ci-hardening-ver03-temp"]
+
+jobs:
+  harden:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Decode source package
+        run: |
+          python - <<'PY'
+          import base64
+          from pathlib import Path
+          Path('working.zip').write_bytes(base64.b64decode(Path('temp/ver03-source.zip.b64').read_text()))
+          PY
+          rm -rf working
+          mkdir working
+          unzip -q working.zip -d working
+      - name: Install quality tools and package
+        working-directory: working
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[full,dev]" pandas-stubs types-PyYAML types-psutil
+      - name: Apply Ruff fixes and formatting
+        working-directory: working
+        run: |
+          ruff check . --fix --unsafe-fixes || true
+          ruff format .
+          ruff check . > ../ruff-check.txt 2>&1 || true
+          ruff format --check . > ../ruff-format.txt 2>&1 || true
+      - name: Run mypy report
+        working-directory: working
+        run: mypy solarhpo > ../mypy.txt 2>&1 || true
+      - name: Run tests and coverage report
+        working-directory: working
+        run: python -m pytest --cov=solarhpo --cov-report=term-missing --cov-fail-under=85 > ../pytest-coverage.txt 2>&1 || true
+      - name: Pack formatted source
+        run: |
+          cd working
+          zip -qr ../formatted-source.zip . -x '*.pytest_cache*' -x '*.mypy_cache*' -x '*.ruff_cache*' -x '*__pycache__*' -x '*.coverage'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ver03-hardening-output
+          path: |
+            formatted-source.zip
+            ruff-check.txt
+            ruff-format.txt
+            mypy.txt
+            pytest-coverage.txt
+          retention-days: 1
