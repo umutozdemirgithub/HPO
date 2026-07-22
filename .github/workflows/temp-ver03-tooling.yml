@@ -3,6 +3,8 @@ name: Temporary Ver03 tooling export
 on:
   push:
     branches: ["ci-hardening-ver03-temp"]
+  pull_request:
+    branches: ["main"]
 
 jobs:
   export-tools:
