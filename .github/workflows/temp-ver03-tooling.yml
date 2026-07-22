@@ -20,15 +20,18 @@ jobs:
           mkdir wheelhouse
           python -m pip download --dest wheelhouse \
             ruff==0.9.10 \
-            mypy==1.13.0 \
             pandas-stubs \
             types-PyYAML \
             types-psutil \
             typing-extensions \
             mypy-extensions \
             pathspec
+          python -m pip download --dest wheelhouse --only-binary=:all: --no-deps \
+            --python-version 313 --implementation cp --abi cp313 \
+            --platform manylinux_2_17_x86_64 \
+            mypy==1.13.0
       - uses: actions/upload-artifact@v4
         with:
-          name: ver03-quality-wheelhouse
+          name: ver03-quality-wheelhouse-py313
           path: wheelhouse/
           retention-days: 1
